@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -6,10 +6,17 @@ import {
   Animated,
   Pressable,
   ScrollView,
+  Platform,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { Shield, Lock, Zap } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import DevToast from "@/components/DevToast";
+
+const DEV_PREMIUM_KEY = "dev_premium_unlocked";
+const TAP_TARGET = 7;
+const TAP_WINDOW_MS = 2000;
 
 function AnimatedPressable({
   onPress,
@@ -51,6 +58,48 @@ function AnimatedPressable({
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [toastVisible, setToastVisible] = useState(false);
+
+  const tapCount = useRef(0);
+  const tapResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLogoTap = async () => {
+    if (Platform.OS === "ios") {
+      try {
+        const Haptics = await import("expo-haptics");
+        tapCount.current += 1;
+        console.log(`[DevUnlock] Logo tap ${tapCount.current}/${TAP_TARGET}`);
+
+        if (tapCount.current < TAP_TARGET) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } else {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      } catch {
+        tapCount.current += 1;
+        console.log(`[DevUnlock] Logo tap ${tapCount.current}/${TAP_TARGET}`);
+      }
+    } else {
+      tapCount.current += 1;
+      console.log(`[DevUnlock] Logo tap ${tapCount.current}/${TAP_TARGET}`);
+    }
+
+    if (tapResetTimer.current) clearTimeout(tapResetTimer.current);
+    tapResetTimer.current = setTimeout(() => {
+      if (tapCount.current < TAP_TARGET) {
+        console.log("[DevUnlock] Tap sequence reset (timeout)");
+      }
+      tapCount.current = 0;
+    }, TAP_WINDOW_MS);
+
+    if (tapCount.current >= TAP_TARGET) {
+      tapCount.current = 0;
+      if (tapResetTimer.current) clearTimeout(tapResetTimer.current);
+      console.log("[DevUnlock] Developer mode activated — storing flag");
+      await AsyncStorage.setItem(DEV_PREMIUM_KEY, "true");
+      setToastVisible(true);
+    }
+  };
 
   const handleTorPress = () => {
     console.log("[HomeScreen] User pressed Tor-over-VPN button");
@@ -68,16 +117,19 @@ export default function HomeScreen() {
         }}
       />
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+        <DevToast visible={toastVisible} onHide={() => setToastVisible(false)} />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
+          {/* Header — tap logo 7x to unlock dev mode */}
           <View style={styles.header}>
-            <View style={styles.headerIconRow}>
-              <Shield size={22} color="#7C3AED" />
-            </View>
+            <Pressable onPress={handleLogoTap} hitSlop={8}>
+              <View style={styles.headerIconRow}>
+                <Shield size={22} color="#7C3AED" />
+              </View>
+            </Pressable>
             <Text style={styles.appName}>Anarcho VPN</Text>
             <Text style={styles.appTagline}>Privacy without compromise</Text>
           </View>

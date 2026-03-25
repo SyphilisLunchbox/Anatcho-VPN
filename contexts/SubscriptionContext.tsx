@@ -30,6 +30,10 @@ import Purchases, {
 } from "react-native-purchases";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Key used by the secret developer bypass (7-tap logo unlock on home screen)
+export const DEV_PREMIUM_KEY = "dev_premium_unlocked";
 
 // Import auth hook for user syncing (validated at setup time)
 import { useAuth } from "./AuthContext";
@@ -94,12 +98,29 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   const authLoading = (auth?.loading ?? false) as boolean;
 
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [devUnlocked, setDevUnlocked] = useState(false);
   const [offerings, setOfferings] = useState<PurchasesOfferings | null>(null);
   const [currentOffering, setCurrentOffering] =
     useState<PurchasesOffering | null>(null);
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isConfigured, setIsConfigured] = useState(false);
+
+  // Check dev premium flag on mount and whenever it might change
+  useEffect(() => {
+    const checkDevFlag = async () => {
+      try {
+        const flag = await AsyncStorage.getItem(DEV_PREMIUM_KEY);
+        if (flag === "true") {
+          console.log("[DevUnlock] Dev premium flag detected — granting access");
+          setDevUnlocked(true);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    checkDevFlag();
+  }, []);
 
     // Fetch offerings via REST API for web platform
   const fetchOfferingsViaRest = async () => {
@@ -346,10 +367,13 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     setIsSubscribed(true);
   };
 
+  // Effective subscription state: real RC subscription OR dev unlock flag
+  const effectiveIsSubscribed = isSubscribed || devUnlocked;
+
   return (
     <SubscriptionContext.Provider
       value={{
-        isSubscribed,
+        isSubscribed: effectiveIsSubscribed,
         offerings,
         currentOffering,
         packages,
