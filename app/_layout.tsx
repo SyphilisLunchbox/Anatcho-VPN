@@ -8,7 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useColorScheme, Alert } from "react-native";
 import { useNetworkState } from "expo-network";
-import {
+import {import { usePathname } from 'expo-router';
   DarkTheme,
   DefaultTheme,
   Theme,
