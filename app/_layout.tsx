@@ -1,7 +1,7 @@
 import "react-native-reanimated";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useFonts } from "expo-font";
-import { Stack, Redirect, usePathname, useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { SystemBars } from "react-native-edge-to-edge";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -34,53 +34,63 @@ function SubscriptionRedirect() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  // Keep a ref so the effect body always reads the latest pathname
+  // without pathname itself being a dependency (which would re-trigger
+  // the effect on every navigation and cause an infinite redirect loop).
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   useEffect(() => {
     if (loading || authLoading) return;
-    const onAuthScreen = pathname === "/auth";
-    if (onAuthScreen) return;
+
+    const currentPath = pathnameRef.current;
+
+    if (currentPath === "/auth") return;
     if (!user) {
       router.replace("/auth");
       return;
     }
-    const onOnboarding = pathname.startsWith("/onboarding");
-    if (onOnboarding) return;
+    if (currentPath.startsWith("/onboarding")) return;
 
     let cancelled = false;
     isOnboardingComplete().then((done) => {
       if (cancelled) return;
+      const path = pathnameRef.current;
       if (!done) {
-        router.replace("/onboarding");
+        if (!path.startsWith("/onboarding")) {
+          router.replace("/onboarding");
+        }
         return;
       }
-      const onPaywall = pathname === "/paywall";
-      if (onPaywall) return;
+      if (path === "/paywall") return;
       if (!isSubscribed) {
         router.replace("/paywall");
       }
     }).catch(() => {
       if (cancelled) return;
-      const onPaywall = pathname === "/paywall";
-      if (onPaywall) return;
+      const path = pathnameRef.current;
+      if (path === "/paywall") return;
       if (!isSubscribed) {
         router.replace("/paywall");
       }
     });
     return () => { cancelled = true; };
-  }, [isSubscribed, loading, authLoading, pathname, user]);
+  // Intentionally omit pathname — we read it via pathnameRef to avoid
+  // re-running this effect on every navigation (which causes infinite loops).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSubscribed, loading, authLoading, user]);
 
   return null;
 }
 
 export default function RootLayout() {
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
-  const pathname = usePathname();
 
   useEffect(() => {
     isOnboardingComplete().then((complete) => {
       setOnboardingComplete(complete);
     });
-  }, [pathname]);
+  }, []);
 
   const colorScheme = useColorScheme();
   const networkState = useNetworkState();
@@ -146,8 +156,6 @@ export default function RootLayout() {
             <SafeAreaProvider>
               <WidgetProvider>
                 <GestureHandlerRootView>
-                  {onboardingComplete === false && pathname !== "/auth" && pathname !== "/paywall" && pathname !== "/auth-popup" && pathname !== "/auth-callback" && <Redirect href="/onboarding" />}
-
                   <Stack>
                     {/* Main app with tabs */}
                     <Stack.Screen name="onboarding" options={{ headerShown: false }} />
